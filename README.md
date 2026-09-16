@@ -213,14 +213,14 @@ await startAdminServer({
 });
 ```
 
-### `createMcpServer(options)`
+### `buildMcpServer(options)`
 
 Create a low-level MCP server instance for custom integration.
 
 ```typescript
-import { createMcpServer } from "@powerduck/openapi-mcp-server";
+import { buildMcpServer } from "@powerduck/openapi-mcp-server";
 
-const server = createMcpServer({
+const server = buildMcpServer({
   spec: openApiDocument,
   serverName: "My API",
   securityValues: { bearerAuth: "token" },
