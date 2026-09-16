@@ -290,6 +290,14 @@ import type {
 
 ---
 
+## Links
+
+- [Official Website](https://www.powerduck.com/opensource/openapi-to-mcp-server.html)
+- [Documentation](https://www.powerduck.com/docs/openapi-to-mcp-server/introduction/)
+- [Live Demo](https://www.powerduck.com/demo/openapi-to-mcp-server)
+- [GitHub](https://github.com/powerducklab/openapi-mcp-server)
+- [npm](https://www.npmjs.com/package/@powerduck/openapi-to-mcp-server)
+
 ## License
 
 MIT © [POWERDUCK LIMITED](https://www.powerduck.com)
