@@ -4,7 +4,7 @@
 [![license](https://img.shields.io/npm/l/@powerduck/openapi-mcp-server)](https://github.com/powerducklab/openapi-mcp-server/blob/main/LICENSE)
 [![downloads](https://img.shields.io/npm/dm/@powerduck/openapi-mcp-server)](https://www.npmjs.com/package/@powerduck/openapi-mcp-server)
 
-Turn any OpenAPI 3.2 document into a fully functional MCP (Model Context Protocol) server. Automatically generates tools, prompts, and resources from your API spec. Supports both stdio and HTTP (SSE) transports.
+Turn any OpenAPI 3.2 document into a fully functional MCP (Model Context Protocol) server. Automatically generates tools, prompts, and resources from your API spec. Supports stdio and Streamable HTTP transports, plus a built-in web UI and admin API.
 
 ---
 
@@ -34,47 +34,49 @@ npm install @powerduck/openapi-mcp-server
 ### Run as a stdio server (CLI)
 
 ```bash
-npx @powerduck/openapi-mcp-server serve --spec ./openapi.json
+npx @powerduck/openapi-mcp-server serve --transport stdio --spec ./openapi.json
 ```
 
-### Run as an HTTP server (CLI)
+### Run the web server (CLI)
+
+`web` is the default transport. It serves the Streamable HTTP endpoint at `/mcp`, the web UI, and the admin API.
 
 ```bash
 npx @powerduck/openapi-mcp-server serve \
   --spec ./openapi.json \
-  --transport http \
-  --port 3000 \
-  --route-prefix /mcp
+  --port 3000
 ```
 
 ### Programmatic stdio server
 
-```typescript
-import { startStdioServer } from "@powerduck/openapi-mcp-server";
+`startStdioServer` takes a loaded document, not an options object. Use `loadOpenApiSpec` to read and parse a file first.
 
-await startStdioServer({
-  specPath: "./openapi.json",
-  serverName: "My API MCP Server",
-  serverVersion: "1.0.0",
-});
+```typescript
+import { loadOpenApiSpec, startStdioServer } from "@powerduck/openapi-mcp-server";
+
+const spec = await loadOpenApiSpec("./openapi.json");
+await startStdioServer(spec);
 ```
 
 ### Programmatic HTTP server (Express)
+
+`attachSseRoutes` wires the Streamable HTTP (and legacy SSE) endpoints into an existing Express app. It takes provider functions that return the current document and execution context.
 
 ```typescript
 import express from "express";
 import { attachSseRoutes } from "@powerduck/openapi-mcp-server";
 
 const app = express();
+const spec = openApiDocument; // a loaded OpenAPI 3.2 document
 
-attachSseRoutes(app, {
-  specPath: "./openapi.json",
-  routePrefix: "/mcp",
-  serverName: "My API MCP Server",
-});
+attachSseRoutes(
+  app,
+  () => spec,
+  () => ({}),
+);
 
 app.listen(3000, () => {
-  console.log("MCP server running at http://localhost:3000/mcp");
+  console.log("MCP endpoint at http://localhost:3000/mcp");
 });
 ```
 
@@ -115,74 +117,59 @@ app.listen(3000, () => {
 ### Commands
 
 ```bash
-openapi-mcp-server serve [options]
+openapi-mcp serve [options]
 
-# Stdio server (default)
-openapi-mcp-server serve --spec ./openapi.json
+# Web server (default): Streamable HTTP at /mcp plus the web UI
+openapi-mcp serve --spec ./openapi.json --port 3000
 
-# HTTP/SSE server
-openapi-mcp-server serve --spec ./openapi.json --transport http --port 3000
+# Stdio server
+openapi-mcp serve --transport stdio --spec ./openapi.json
 
-# With auth and filtering
-openapi-mcp-server serve \
+# Web server with an admin key and an upstream override
+openapi-mcp serve \
   --spec ./openapi.json \
-  --transport http \
   --port 3000 \
-  --bearer $TOKEN \
-  --include-tags users,orders \
-  --exclude-methods delete
+  --api-key $ADMIN_KEY \
+  --base-url https://api.example.com
 ```
 
 ### Options
 
-| Option              | Type       | Default   | Description                                |
-| ------------------- | ---------- | --------- | ------------------------------------------ |
-| `--spec`            | `string`   | -         | Path or URL to OpenAPI spec (required)     |
-| `--transport`       | `string`   | `stdio`   | Transport type: `stdio` or `http`          |
-| `--port`            | `number`   | `3000`    | HTTP server port                           |
-| `--host`            | `string`   | `0.0.0.0` | HTTP server host                           |
-| `--route-prefix`    | `string`   | `/mcp`    | HTTP route prefix                          |
-| `--server-name`     | `string`   | -         | MCP server display name                    |
-| `--server-version`  | `string`   | `1.0.0`   | MCP server version                         |
-| `--bearer`          | `string`   | -         | Bearer token for API authentication        |
-| `--api-key`         | `string`   | -         | API key for API authentication             |
-| `--header`          | `string[]` | -         | Custom headers (Key: Value)                |
-| `--include-tags`    | `string`   | -         | Include tools with these tags              |
-| `--exclude-tags`    | `string`   | -         | Exclude tools with these tags              |
-| `--include-methods` | `string`   | -         | Include tools with these methods           |
-| `--exclude-methods` | `string`   | -         | Exclude tools with these methods           |
-| `--include-paths`   | `string`   | -         | Include tools matching these path patterns |
-| `--exclude-paths`   | `string`   | -         | Exclude tools matching these path patterns |
-| `--admin`           | `boolean`  | `true`    | Enable admin dashboard                     |
-| `--admin-port`      | `number`   | `3001`    | Admin dashboard port                       |
-| `--log-level`       | `string`   | `info`    | Log level: debug, info, warn, error        |
-| `--cors-origin`     | `string`   | `*`       | CORS allowed origin                        |
-| `--rate-limit`      | `number`   | `100`     | Max requests per minute per tool           |
+| Option              | Type       | Default     | Description                                            |
+| ------------------- | ---------- | ----------- | ------------------------------------------------------ |
+| `--spec`            | `string`   | -           | OpenAPI document file path (required in stdio mode)    |
+| `--transport`       | `string`   | `web`       | Transport: `web` or `stdio`                            |
+| `--port`            | `number`   | `3000`      | Web server port                                        |
+| `--host`            | `string`   | `127.0.0.1` | Web server host                                        |
+| `--base-url`        | `string`   | -           | Override the upstream base URL                         |
+| `--api-key`         | `string`   | -           | Admin API key (also gates the HTTP transport when set) |
+| `--upstream-header` | `string[]` | -           | Repeatable upstream header, `"Header-Name: value"`     |
+| `--timeout`         | `number`   | `30000`     | Upstream timeout in ms                                 |
+| `--no-persist`      | `flag`     | off         | Disable state persistence                              |
 
 ---
 
 ## Programmatic API
 
-### `startStdioServer(options)`
+### `startStdioServer(spec, context?, options?)`
 
 Start an MCP server over stdio.
 
 ```typescript
 import { startStdioServer } from "@powerduck/openapi-mcp-server";
 
-await startStdioServer({
-  specPath: "./openapi.json",
-  serverName: "My API",
-  serverVersion: "1.0.0",
-  securityValues: { bearerAuth: "token" },
-  toolFilter: { includeTags: ["users", "orders"] },
-  logLevel: "info",
+await startStdioServer(spec, {
+  baseUrlOverride: "https://api.example.com",
 });
 ```
 
-### `attachSseRoutes(app, options)`
+- `spec` — loaded OpenAPI 3.2 document
+- `context` — optional `ExecutionContext` (base URL override, upstream headers, timeout, credentials)
+- `options` — optional `StartStdioServerOptions` (`handleSignals`, defaults to `true`)
 
-Attach MCP SSE routes to an Express app.
+### `attachSseRoutes(app, specProvider, contextProvider, routeGuard?)`
+
+Attach the Streamable HTTP and legacy SSE routes to an Express app.
 
 ```typescript
 import express from "express";
@@ -190,48 +177,51 @@ import { attachSseRoutes } from "@powerduck/openapi-mcp-server";
 
 const app = express();
 
-attachSseRoutes(app, {
-  specPath: "./openapi.json",
-  routePrefix: "/mcp",
-  serverName: "My API",
-  corsOrigin: "https://my-app.com",
-});
+attachSseRoutes(
+  app,
+  () => spec,
+  () => executionContext,
+);
 
 app.listen(3000);
 ```
 
-### `startAdminServer(options)`
+- `specProvider` — `() => Document | null`
+- `contextProvider` — `() => ExecutionContext`
+- `routeGuard` — optional Express middleware that gates the endpoints (use `createAuthMiddleware(apiKey)`)
 
-Start the admin dashboard server.
+### `startAdminServer(config)`
+
+Start the standalone web server: Streamable HTTP endpoint, web UI, and admin API.
 
 ```typescript
 import { startAdminServer } from "@powerduck/openapi-mcp-server";
 
 await startAdminServer({
-  port: 3001,
-  mcpServerUrl: "http://localhost:3000/mcp",
+  port: 3000,
+  host: "127.0.0.1",
+  specPath: "./openapi.json",
+  apiKey: process.env.ADMIN_KEY,
 });
 ```
 
-### `buildMcpServer(options)`
+`config` is a `ServerConfig`. Key fields: `port`, `host`, `apiKey`, `specPath`, `baseUrlOverride`, `upstreamHeaders`, `requestTimeoutMs`, `persistState`, `allowedOrigins`, and `security`.
 
-Create a low-level MCP server instance for custom integration.
+### `buildMcpServer(specProvider, contextProvider?, options?)`
+
+Create a low-level MCP server instance for custom integrations.
 
 ```typescript
 import { buildMcpServer } from "@powerduck/openapi-mcp-server";
 
-const server = buildMcpServer({
-  spec: openApiDocument,
-  serverName: "My API",
-  securityValues: { bearerAuth: "token" },
-});
-
-// List tools
-const tools = await server.listTools();
-
-// Call a tool
-const result = await server.callTool("getUser", { id: "123" });
+const server = buildMcpServer(
+  () => spec,
+  () => ({}),
+  { name: "My API", version: "1.0.0" },
+);
 ```
+
+`options` is `BuildMcpServerOptions`: `name`, `version`, `pageSize`, `instructions`, and `protocol`.
 
 ---
 
@@ -247,6 +237,8 @@ const result = await server.callTool("getUser", { id: "123" });
       "args": [
         "@powerduck/openapi-mcp-server",
         "serve",
+        "--transport",
+        "stdio",
         "--spec",
         "./openapi.json"
       ],
@@ -276,15 +268,12 @@ const result = await server.callTool("getUser", { id: "123" });
 
 ```typescript
 import type {
-  StdioServerOptions,
-  HttpServerOptions,
-  McpServerOptions,
-  ToolFilter,
-  SecurityValues,
-  McpTool,
-  McpPrompt,
-  McpResource,
-  ToolCallResult,
+  StartStdioServerOptions,
+  BuildMcpServerOptions,
+  ServerConfig,
+  ExecutionContext,
+  SpecProvider,
+  ContextProvider,
 } from "@powerduck/openapi-mcp-server";
 ```
 
@@ -292,11 +281,11 @@ import type {
 
 ## Links
 
-- [Official Website](https://www.powerduck.com/opensource/openapi-to-mcp-server.html)
-- [Documentation](https://www.powerduck.com/docs/openapi-to-mcp-server/introduction/)
-- [Live Demo](https://www.powerduck.com/demo/openapi-to-mcp-server)
+- [Official Website](https://www.powerduck.com/opensource/openapi-mcp-server.html)
+- [Documentation](https://www.powerduck.com/docs/openapi-mcp-server/introduction/)
+- [Live Demo](https://www.powerduck.com/demo/)
 - [GitHub](https://github.com/powerducklab/openapi-mcp-server)
-- [npm](https://www.npmjs.com/package/@powerduck/openapi-to-mcp-server)
+- [npm](https://www.npmjs.com/package/@powerduck/openapi-mcp-server)
 
 ## License
 
