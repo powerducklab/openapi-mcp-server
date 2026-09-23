@@ -39,7 +39,22 @@ export { buildRequest } from "./core/request-builder";
 export { buildMcpServer } from "./mcp/create-server";
 export type { SpecProvider, ContextProvider } from "./mcp/create-server";
 export { startStdioServer } from "./mcp/transport-stdio";
-export { attachSseRoutes } from "./mcp/transport-http";
+export { attachSseRoutes, attachMcpRoutes } from "./mcp/transport-http";
+export type {
+  McpRouteHandle,
+  AttachMcpRoutesOptions,
+} from "./mcp/transport-http";
+export { createStreamableSessionHost } from "./mcp/session-host";
+export type {
+  StreamableSessionHost,
+  StreamableSessionHostOptions,
+} from "./mcp/session-host";
+export type {
+  McpSessionEvent,
+  McpSessionInfo,
+  SessionCloseReason,
+  SessionKind,
+} from "./mcp/session-types";
 
 export { startAdminServer } from "./server/admin-server";
 export { createAuthMiddleware } from "./server/auth";
