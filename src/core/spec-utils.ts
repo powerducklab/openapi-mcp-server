@@ -1,3 +1,4 @@
+import { OPENAPI_METHODS as HTTP_METHODS, isHttpMethod } from "@powerduck/openapi-parser/methods";
 import type { ParameterLocation } from "@/types";
 import type {
   Oas32Document as Document,
@@ -14,19 +15,9 @@ import type {
  * description, servers, parameters, $ref, vendor extensions, and the 3.2
  * `additionalOperations` map) must never be treated as a standard operation.
  */
-export const HTTP_METHODS = [
-  "get",
-  "put",
-  "post",
-  "delete",
-  "options",
-  "head",
-  "patch",
-  "trace",
-  "query",
-] as const;
 
-export type HttpMethod = (typeof HTTP_METHODS)[number];
+
+export type HttpMethod = string;
 
 const HTTP_METHOD_SET: ReadonlySet<string> = new Set<string>(HTTP_METHODS);
 
@@ -545,8 +536,8 @@ export function* iterateOperations(
     }
 
     for (const [key, value] of readAdditionalOperations(rawPathItem)) {
-      const method = key.trim().toLowerCase();
-      if (!method) continue;
+      const method = key.toLowerCase();
+      if (!isHttpMethod(method)) continue;
       // A standard method repeated here would create two tools for one route.
       if (candidates.some((candidate) => candidate.key === method)) continue;
       candidates.push({ key: method, value, standard: false });
@@ -796,3 +787,5 @@ export function assertUniqueOperationIds(
 
   throw new Error(`Duplicate operationId values in specification: ${detail}`);
 }
+
+export { HTTP_METHODS };
