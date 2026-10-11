@@ -262,6 +262,10 @@ function cachedResources(
 export async function startAdminServer(
   config: ServerConfig,
 ): Promise<AdminServerHandle> {
+  const host = config.host ?? "127.0.0.1";
+  if (!["127.0.0.1", "localhost", "::1"].includes(host) && !config.apiKey?.trim()) {
+    throw new Error("Non-loopback MCP servers require an explicit API key.");
+  }
   const app = express();
   const auth: RequestHandler = createAuthMiddleware(config.apiKey);
   const registry = new ServiceRegistry();
