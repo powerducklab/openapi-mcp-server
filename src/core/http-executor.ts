@@ -1,4 +1,5 @@
 import axios, { AxiosError, AxiosHeaders } from "axios";
+import { format as formatUrl } from "node:url";
 import { randomUUID } from "node:crypto";
 import type { Oas32Document as Document } from "@powerduck/openapi-parser";
 import { buildRequest } from "./request-builder";
@@ -151,22 +152,26 @@ function hasHeader(headers: Record<string, string>, name: string): boolean {
 /** Replaces credential values so a log entry can be shown safely. */
 function redactHeaders(
   headers: Record<string, string | undefined>,
+  sensitiveHeaders: ReadonlySet<string> = SENSITIVE_HEADERS,
 ): Record<string, string> {
   const output: Record<string, string> = {};
   for (const [key, value] of Object.entries(headers)) {
     if (value === undefined) continue;
-    output[key] = SENSITIVE_HEADERS.has(key.toLowerCase())
+    output[key] = sensitiveHeaders.has(key.toLowerCase())
       ? "[redacted]"
       : value;
   }
   return output;
 }
 
-function normalizeResponseHeaders(raw: unknown): Record<string, unknown> {
+function normalizeResponseHeaders(
+  raw: unknown,
+  sensitiveHeaders: ReadonlySet<string> = SENSITIVE_HEADERS,
+): Record<string, unknown> {
   if (!raw || typeof raw !== "object") return {};
   const output: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
-    output[key] = SENSITIVE_HEADERS.has(key.toLowerCase())
+    output[key] = sensitiveHeaders.has(key.toLowerCase())
       ? "[redacted]"
       : value;
   }
@@ -438,6 +443,19 @@ export async function executeToolCall(
   const startedAt = Date.now();
   const searchParams = toSearchParams(built.query);
 
+  const sensitiveHeaders = new Set(SENSITIVE_HEADERS);
+  for (const name of Object.keys(context.security?.apiKeys ?? {}))
+    sensitiveHeaders.add(name.toLowerCase());
+  for (const scheme of Object.values(spec.components?.securitySchemes ?? {})) {
+    if (
+      "type" in scheme &&
+      scheme.type === "apiKey" &&
+      scheme.in === "header"
+    ) {
+      sensitiveHeaders.add(scheme.name.toLowerCase());
+    }
+  }
+
   const mergedHeaders: Record<string, string> = {};
   // Operator-configured headers first, so per-request headers derived from the
   // document always win.
@@ -499,7 +517,7 @@ export async function executeToolCall(
     method: methodUpper,
     path: resolved.path,
     url: built.url,
-    requestHeaders: redactHeaders(mergedHeaders),
+    requestHeaders: redactHeaders(mergedHeaders, sensitiveHeaders),
     requestQuery: groupQuery(searchParams),
     requestBody: loggedRequestBody.value,
     truncated: loggedRequestBody.truncated,
@@ -527,6 +545,21 @@ export async function executeToolCall(
       maxContentLength: MAX_CONTENT_BYTES,
       maxBodyLength: MAX_CONTENT_BYTES,
       maxRedirects: 5,
+      beforeRedirect(options, _response, request) {
+        const destination = new URL(
+          formatUrl({
+            protocol: options.protocol,
+            hostname: options.hostname,
+            port: options.port,
+          }),
+        );
+        if (destination.origin !== new URL(request.url).origin) {
+          for (const name of Object.keys(options.headers ?? {})) {
+            if (sensitiveHeaders.has(name.toLowerCase()))
+              delete options.headers[name];
+          }
+        }
+      },
       decompress: true,
       // Read as text and parse manually: axios's own JSON parsing hides the raw
       // payload, which is exactly what an operator needs when a response is
@@ -539,7 +572,10 @@ export async function executeToolCall(
       ...(context.signal ? { signal: context.signal } : {}),
     });
 
-    const responseHeaders = normalizeResponseHeaders(response.headers);
+    const responseHeaders = normalizeResponseHeaders(
+      response.headers,
+      sensitiveHeaders,
+    );
     const rawHeaders = response.headers as Record<string, unknown> | undefined;
     const contentType = String(rawHeaders?.["content-type"] ?? "");
 
